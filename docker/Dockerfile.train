@@ -1,0 +1,57 @@
+# Image that runs the training script.
+#
+# It is built in three stages. The builder stage installs the packages into a
+# virtual environment, and only that environment is copied into the final
+# image. The compiler and the pip cache are left behind, which keeps the
+# finished image smaller.
+
+# ---------- Stage 1: settings shared by the other stages ----------
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# ---------- Stage 2: install the packages ----------
+FROM base AS builder
+
+# A few packages are built from source and need a compiler. It stays in this
+# stage only.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv "$VIRTUAL_ENV"
+
+# Copied on its own so Docker can reuse this layer. The packages are only
+# reinstalled when requirements/train.txt changes, not on every code edit.
+COPY requirements/train.txt /tmp/train.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/train.txt
+
+# ---------- Stage 3: the final image ----------
+FROM base AS training
+
+COPY --from=builder /opt/venv /opt/venv
+
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+# Folders for the images and the saved model. Both are mounted from outside,
+# so the downloaded data and the result stay after the container exits.
+RUN mkdir -p /app/data /app/checkpoints \
+    && useradd --create-home --uid 1000 trainer \
+    && chown -R trainer:trainer /app
+
+USER trainer
+
+# The settings file is read from this path, which can be replaced by a
+# mounted file without rebuilding the image.
+ENV CONFIG_PATH=/app/configs/training_config.yaml
+
+ENTRYPOINT ["python", "src/train.py"]
