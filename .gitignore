@@ -1,0 +1,49 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+
+# ---- Datasets and model artefacts (never commit binaries) ----
+data/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+*.tar.gz
+runs/
+lightning_logs/
+
+# ---- Secrets: only the *.example.yaml templates are tracked ----
+.env
+.env.*
+!.env.example
+k8s/secret.yaml
+*.key
+*.pem
+*credentials*.json
+kubeconfig
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Local scratch ----
+*.log
+tmp/
+test_image.png

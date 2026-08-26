@@ -1,0 +1,12 @@
+# Packages needed to run src/serve.py
+# No training-only packages here on purpose
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.3.1+cpu          
+torchvision==0.18.1+cpu   
+numpy==1.26.4         
+PyYAML==6.0.1             
+fastapi==0.115.0          
+uvicorn==0.30.6           
+python-multipart==0.0.9
+pillow==10.4.0            

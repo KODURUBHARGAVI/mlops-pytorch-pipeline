@@ -1,0 +1,57 @@
+name: CI
+
+# Part B scope: lint and unit tests.
+# The image-build and manifest-validation jobs land with Parts C and D, so no
+# job here references a file that does not exist yet.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff==0.6.4
+
+      - name: Lint
+        run: ruff check src tests scripts
+
+      - name: Format check (non-blocking)
+        continue-on-error: true
+        run: ruff format --check src tests scripts
+
+  test:
+    name: Unit tests (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install dependencies (CPU wheels only)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Run tests
+        run: pytest tests -v
