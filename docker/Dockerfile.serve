@@ -1,0 +1,56 @@
+# Image that runs the web API.
+#
+# Built in two stages, like the training image. Only the packages needed for
+# predictions are installed, so nothing used just for training is included.
+
+# ---------- Stage 1: install the packages ----------
+FROM python:3.11-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv "$VIRTUAL_ENV"
+
+COPY requirements/serve.txt /tmp/serve.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/serve.txt
+
+# ---------- Stage 2: the final image ----------
+FROM python:3.11-slim AS serving
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PORT=8080 \
+    MODEL_PATH=/app/checkpoints/classifier_v1.pt
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+
+# Only the three files the API needs. train.py is not copied.
+COPY src/model.py src/dataset.py src/serve.py ./src/
+COPY configs/training_config.yaml ./configs/training_config.yaml
+
+# The trained model is mounted here, read only.
+RUN mkdir -p /app/checkpoints \
+    && useradd --create-home --uid 1001 appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8080
+
+# Docker calls /health to check the container is working. Python is used
+# rather than curl, so no extra package has to be installed.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status == 200 else 1)"
+
+CMD ["uvicorn", "src.serve:app", "--host", "0.0.0.0", "--port", "8080"]

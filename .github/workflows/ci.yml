@@ -1,8 +1,6 @@
 name: CI
 
-# Part B scope: lint and unit tests.
-# The image-build and manifest-validation jobs land with Parts C and D, so no
-# job here references a file that does not exist yet.
+# Runs the linter, the tests, and builds both images.
 
 on:
   push:
@@ -55,3 +53,32 @@ jobs:
 
       - name: Run tests
         run: pytest tests -v
+
+  docker:
+    name: Build the images
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the training image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.train
+          tags: mlops-train:ci
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the serving image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.serve
+          tags: mlops-serve:ci
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
