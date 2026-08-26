@@ -1,6 +1,6 @@
 """Exercise the running inference API: /health, /metadata and /predict.
     python scripts/smoke_test.py
-    python scripts/smoke_test.py --base-url http://localhost:8000
+    python scripts/smoke_test.py --base-url http://localhost:8000   # if the port was changed
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def show(label: str, status: int, payload: object) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--image", default="test_image.png")
     args = parser.parse_args()
 

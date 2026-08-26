@@ -121,12 +121,18 @@ early and an early_stopping line is printed.
 This terminal must stay open while the API is running.
 
     $env:MODEL_PATH=".\checkpoints\classifier_v1.pt"
-    $env:PORT="8000"
     python src\serve.py
 
-Port 8000 is used because port 8080 is often already taken by other tools such
-as Airflow or Jenkins. If another program is using the port, the replies will
-come from that program instead of this API.
+The API starts on port 8080. This is the port the assignment asks the
+container to use in Part C, so the same port is used here to keep everything
+consistent.
+
+If another program on the machine is already using 8080, such as Airflow or
+Jenkins, the replies will come from that program instead of this API. In that
+case pick a different port and pass the same one to the test script:
+
+    $env:PORT="8000"
+    python src\serve.py
 
 ---
 
@@ -135,14 +141,18 @@ come from that program instead of this API.
 Open a second terminal, activate the virtual environment again, then run:
 
     python scripts\make_test_image.py --from-dataset
-    python scripts\smoke_test.py --base-url http://localhost:8000
+    python scripts\smoke_test.py
 
 The first command saves a real image from the dataset as test_image.png and
 prints its actual class. The second command calls all three endpoints and
 prints the responses. The predicted class should match the actual class.
 
-The address http://localhost:8000/docs also opens a page in the browser where
+The address http://localhost:8080/docs also opens a page in the browser where
 an image can be uploaded and the result viewed directly.
+
+If the API was started on a different port, pass it to the test script:
+
+    python scripts\smoke_test.py --base-url http://localhost:8000
 
 ---
 
