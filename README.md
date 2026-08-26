@@ -257,6 +257,114 @@ pinned, so the same image is produced each time it is built.
 
 ---
 
+# Part D: Kubernetes
+
+This part runs the training job and the API on a Kubernetes cluster. The
+cluster used here is the one built into Docker Desktop, which must be turned
+on in Settings, under Kubernetes.
+
+Check the cluster is reachable:
+
+    kubectl get nodes
+
+Both images from Part C must be built already. Docker Desktop shares its
+images with its own cluster, so nothing needs to be pushed anywhere. If a pod
+later reports ErrImagePull, load the images by hand:
+
+    kind load docker-image mlops-train:v1 --name desktop
+    kind load docker-image mlops-serve:v1 --name desktop
+
+## Step 11: Create the namespace, the settings and the storage
+
+    kubectl apply -f k8s/namespace.yaml
+    kubectl apply -f k8s/configmap.yaml
+    kubectl apply -f k8s/storage.yaml
+
+    kubectl get all -n ml-training
+    kubectl get pvc -n ml-training
+
+The settings file is now held in the cluster as a ConfigMap rather than inside
+the image, so a value can be changed without rebuilding anything:
+
+    kubectl describe configmap training-config -n ml-training
+
+## Step 12: Run the training job
+
+    kubectl apply -f k8s/training-job.yaml
+
+    kubectl get jobs -n ml-training
+    kubectl get pods -n ml-training
+    kubectl logs -f job/model-training -n ml-training
+
+The same JSON lines appear as when training ran on the laptop. The job mounts
+the settings from the ConfigMap at /app/configs, and two volumes for the
+images and the saved model, so the model survives after the pod is gone.
+
+Wait for the job to finish before going on:
+
+    kubectl wait --for=condition=complete job/model-training -n ml-training --timeout=30m
+
+## Step 13: Start the API
+
+    kubectl create secret generic serving-secrets --from-literal=API_TOKEN=local-token -n ml-training
+
+    kubectl apply -f k8s/serving-deployment.yaml
+    kubectl apply -f k8s/serving-service.yaml
+
+    kubectl get pods -n ml-training
+    kubectl describe deployment model-serving -n ml-training
+
+Two pods are started. Each one waits until /health returns 200 before it is
+sent any requests, which is the readiness probe doing its job. The pods mount
+the saved model as read only, since the API never writes to it.
+
+## Step 14: Add the autoscaler
+
+The autoscaler needs metrics-server, which is not installed by default:
+
+    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+    kubectl patch deployment metrics-server -n kube-system --type=json -p="[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--kubelet-insecure-tls\"}]"
+
+Then:
+
+    kubectl apply -f k8s/hpa.yaml
+    kubectl get hpa -n ml-training
+
+The TARGETS column shows a percentage once metrics-server has collected
+figures, which takes about a minute.
+
+## Step 15: Test the API in the cluster
+
+    kubectl port-forward svc/model-serving 8080:80 -n ml-training
+
+Then from a second terminal:
+
+    python scripts\smoke_test.py
+
+The service listens on port 80 and passes requests to port 8080 in the
+container, and port-forward connects the laptop to it.
+
+## Cleaning up
+
+    kubectl delete namespace ml-training
+
+## What the files do
+
+    k8s/namespace.yaml            keeps everything for this project together
+    k8s/configmap.yaml            the settings, held in the cluster
+    k8s/secret.example.yaml       a template for the secret, which is not committed
+    k8s/storage.yaml              the volumes for the images and the saved model
+    k8s/training-job.yaml         runs the training script once
+    k8s/serving-deployment.yaml   runs two copies of the API
+    k8s/serving-service.yaml      gives the two pods one address
+    k8s/hpa.yaml                  adds pods when they get busy
+
+If the training pod stays Pending, the cluster does not have 2 CPUs and 4 GB
+free. Either give Docker Desktop more resources in Settings, or lower the
+requests in k8s/training-job.yaml.
+
+---
+
 # Settings
 
 All settings are in configs/training_config.yaml, including epochs,

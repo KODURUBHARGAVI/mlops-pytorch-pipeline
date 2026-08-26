@@ -1,0 +1,7 @@
+# A separate namespace so everything for this project stays together.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-training
+  labels:
+    project: mlops-pytorch-pipeline
