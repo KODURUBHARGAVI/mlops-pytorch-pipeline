@@ -1,0 +1,7 @@
+# Packages needed to run src/train.py
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.3.1+cpu          
+torchvision==0.18.1+cpu   
+numpy==1.26.4             
+PyYAML==6.0.1

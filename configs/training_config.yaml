@@ -1,0 +1,30 @@
+# Settings for training the classifier.
+#
+# The paths are relative. Docker uses /app as its working directory, so ./data
+# becomes /app/data inside a container.
+#
+# Four values can also be set through environment variables when a temporary
+# change is needed: EPOCHS, SUBSET_FRACTION, DATA_DIR and CHECKPOINT_DIR.
+
+model:
+  architecture: simple_cnn    # simple_cnn or resnet18
+  num_classes: 10
+  pretrained: false
+
+training:
+  epochs: 10
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 3
+  seed: 42
+
+data:
+  data_dir: ./data
+  num_workers: 2
+  download: true
+  subset_fraction: 1.0        # 1.0 uses all the images
+
+output:
+  checkpoint_dir: ./checkpoints
+  model_name: classifier_v1.pt
