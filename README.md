@@ -14,6 +14,51 @@ sections below follow that order.
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart LR
+    code["src, configs, tests<br/>Part B"]
+    trainimg["image mlops-train:v1<br/>Part C"]
+    serveimg["image mlops-serve:v1<br/>Part C"]
+
+    cm["ConfigMap: settings<br/>Part D"]
+    job["Job: model-training<br/>Part D"]
+    vol[("Volume: checkpoints<br/>Part D")]
+
+    dep["Deployment: 2 API pods<br/>Part E"]
+    svc["Service: port 80<br/>Part E"]
+    hpa["Autoscaler: 2 to 5 pods<br/>Part E"]
+
+    user["POST /predict<br/>Part F"]
+
+    code --> trainimg
+    code --> serveimg
+    trainimg --> job
+    serveimg --> dep
+    cm --> job
+    job -->|"saves the model"| vol
+    vol -->|"read only"| dep
+    dep --> svc
+    hpa --> dep
+    svc --> user
+```
+
+The same code becomes two images. The Job trains the model using the settings
+from the ConfigMap and saves it to a volume. The two API pods mount that
+volume as read only, and requests reach them through the Service.
+
+## Which part each file belongs to
+
+    Part A   .gitignore, .github/workflows/ci.yml, the folder structure
+    Part B   src/, configs/, requirements/, tests/, scripts/
+    Part C   docker/Dockerfile.train, docker/Dockerfile.serve, .dockerignore
+    Part D   k8s/namespace.yaml, k8s/configmap.yaml, k8s/storage.yaml,
+             k8s/training-job.yaml
+    Part E   k8s/serving-deployment.yaml, k8s/serving-service.yaml,
+             k8s/hpa.yaml, k8s/secret.example.yaml
+    Part F   the end to end run in the last section of this file
+
 # Part A: Repository setup
 
 This part creates the folder structure, the ignore rules and the CI workflow.
@@ -36,15 +81,6 @@ requests, and develop is merged into main at the end.
 
     git branch -a
     git log --oneline --graph --all
-
-## The ignore rules
-
-The dataset and the trained model are large and are not committed. After a
-training run the data and checkpoints folders will hold more than 100 MB, and
-git should still report nothing to commit:
-
-    git status
-
 ---
 
 # Part B: Model, training and the API
@@ -257,9 +293,9 @@ pinned, so the same image is produced each time it is built.
 
 ---
 
-# Part D: Kubernetes
+# Part D: Kubernetes training job
 
-This part runs the training job and the API on a Kubernetes cluster. The
+This part runs the training script on a Kubernetes cluster as a Job. The
 cluster used here is the one built into Docker Desktop, which must be turned
 on in Settings, under Kubernetes.
 
@@ -304,6 +340,12 @@ Wait for the job to finish before going on:
 
     kubectl wait --for=condition=complete job/model-training -n ml-training --timeout=30m
 
+---
+
+# Part E: Kubernetes model serving
+
+This part runs the API in the cluster, behind a Service, with an autoscaler.
+
 ## Step 13: Start the API
 
     kubectl create secret generic serving-secrets --from-literal=API_TOKEN=local-token -n ml-training
@@ -333,6 +375,12 @@ Then:
 The TARGETS column shows a percentage once metrics-server has collected
 figures, which takes about a minute.
 
+---
+
+# Part F: End to end check
+
+Everything applied in order, then a prediction requested through the Service.
+
 ## Step 15: Test the API in the cluster
 
     kubectl port-forward svc/model-serving 8080:80 -n ml-training
@@ -347,17 +395,6 @@ container, and port-forward connects the laptop to it.
 ## Cleaning up
 
     kubectl delete namespace ml-training
-
-## What the files do
-
-    k8s/namespace.yaml            keeps everything for this project together
-    k8s/configmap.yaml            the settings, held in the cluster
-    k8s/secret.example.yaml       a template for the secret, which is not committed
-    k8s/storage.yaml              the volumes for the images and the saved model
-    k8s/training-job.yaml         runs the training script once
-    k8s/serving-deployment.yaml   runs two copies of the API
-    k8s/serving-service.yaml      gives the two pods one address
-    k8s/hpa.yaml                  adds pods when they get busy
 
 If the training pod stays Pending, the cluster does not have 2 CPUs and 4 GB
 free. Either give Docker Desktop more resources in Settings, or lower the

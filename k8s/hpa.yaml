@@ -1,3 +1,4 @@
+# Part E
 # Adds or removes API pods based on how busy they are.
 # This needs metrics-server running in the cluster.
 apiVersion: autoscaling/v2

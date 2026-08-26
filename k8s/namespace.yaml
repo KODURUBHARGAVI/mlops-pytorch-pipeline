@@ -1,3 +1,4 @@
+# Part D
 # A separate namespace so everything for this project stays together.
 apiVersion: v1
 kind: Namespace

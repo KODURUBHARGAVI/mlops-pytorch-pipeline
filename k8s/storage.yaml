@@ -1,3 +1,4 @@
+# Part D
 # Storage that outlives the pods. The training job writes the model here and
 # the API pods read it back.
 apiVersion: v1
