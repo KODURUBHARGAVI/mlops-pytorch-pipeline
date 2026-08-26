@@ -1,0 +1,65 @@
+# Runs the training script once, as a batch job.
+# Apply namespace.yaml, configmap.yaml and storage.yaml before this file.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-training
+  namespace: ml-training
+  labels:
+    app: model-training
+spec:
+  backoffLimit: 2                 # try twice more if the pod fails
+  ttlSecondsAfterFinished: 3600   # remove the finished job after an hour
+  template:
+    metadata:
+      labels:
+        app: model-training
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000             # lets the trainer user write to the volumes
+      containers:
+        - name: trainer
+          image: mlops-train:v1
+          imagePullPolicy: IfNotPresent   # the image is built locally
+          env:
+            - name: CONFIG_PATH
+              value: /app/configs/training_config.yaml
+            # Match the CPU limit below. Without this PyTorch starts one thread
+            # per CPU on the host and they fight over the 2 the pod is given.
+            - name: TORCH_NUM_THREADS
+              value: "2"
+            - name: DATALOADER_WORKERS
+              value: "2"
+            #Need to uncomment these two for a short run while testing.
+            # - name: EPOCHS
+            #   value: "2"
+            # - name: SUBSET_FRACTION
+            #   value: "0.15"
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+            - name: checkpoints
+              mountPath: /app/checkpoints
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: config
+          configMap:
+            name: training-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: training-data-pvc
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: model-checkpoints-pvc
