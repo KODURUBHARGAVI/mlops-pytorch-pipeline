@@ -1,16 +1,19 @@
+**Name:** Bhargavi Koduru
+
+**Roll number:** DA25M517
+
+**Repository Link:** https://github.com/KODURUBHARGAVI/mlops-pytorch-pipeline
+
 # mlops-pytorch-pipeline
 
 This project trains an image classifier using PyTorch and serves it through a
 web API. An image can be sent to the API, and it returns the predicted class.
 
-The project runs on a normal laptop CPU. A GPU is not required.
+The project runs on a normal laptop CPU. GPU is not used
 
 The dataset is Fashion-MNIST. It contains 70,000 grey images of clothing
 items, sized 28 by 28, divided into 10 classes such as T-shirt, Trouser,
 Sneaker and Bag.
-
-The work is done in parts, and each part adds to the same project. The
-sections below follow that order.
 
 ---
 
