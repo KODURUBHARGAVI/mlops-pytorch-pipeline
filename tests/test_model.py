@@ -1,8 +1,4 @@
-"""Unit tests for the model, the data transforms and the training configs.
-
-Everything here runs on CPU in a few seconds and touches no network, which is
-what makes it safe to gate every pull request on.
-"""
+"""Tests for the model, the image preparation and the settings file."""
 
 from pathlib import Path
 
@@ -12,19 +8,21 @@ import yaml
 from PIL import Image
 
 import train
-from dataset import DATASET_SPECS, get_inference_transform, get_spec, get_transforms
+from dataset import (
+    CLASSES,
+    IMAGE_MODE,
+    IMAGE_SIZE,
+    IN_CHANNELS,
+    NUM_CLASSES,
+    get_inference_transform,
+    get_transforms,
+)
 from model import SUPPORTED_ARCHITECTURES, SimpleCNN, get_model
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_DIR = PROJECT_ROOT / "configs"
-ALL_CONFIGS = sorted(CONFIG_DIR.glob("training_config*.yaml"))
-COMBINATIONS = [(a, d) for a in SUPPORTED_ARCHITECTURES for d in DATASET_SPECS]
+CONFIG_PATH = PROJECT_ROOT / "configs" / "training_config.yaml"
 
-
-def blank(spec, size=None):
-    """A PIL image matching a dataset's colour mode, at an arbitrary size."""
-    mode = "L" if spec.in_channels == 1 else "RGB"
-    return Image.new(mode, size or (spec.image_size, spec.image_size))
+SHAPE = (IN_CHANNELS, IMAGE_SIZE, IMAGE_SIZE)
 
 
 # --------------------------------------------------------------------------
@@ -32,34 +30,28 @@ def blank(spec, size=None):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("architecture", "dataset"), COMBINATIONS)
-def test_forward_pass_returns_logits_per_class(architecture, dataset):
-    """Every architecture must handle every dataset's shape and channel count."""
-    spec = get_spec(dataset)
-    model = get_model(
-        architecture=architecture,
-        num_classes=spec.num_classes,
-        in_channels=spec.in_channels,
-    )
+@pytest.mark.parametrize("architecture", SUPPORTED_ARCHITECTURES)
+def test_forward_pass_returns_one_score_per_class(architecture):
+    """Two images in should give two rows of 10 scores out."""
+    model = get_model(architecture, num_classes=NUM_CLASSES, in_channels=IN_CHANNELS)
     model.eval()
-    batch = torch.randn(2, spec.in_channels, spec.image_size, spec.image_size)
     with torch.no_grad():
-        output = model(batch)
-    assert output.shape == (2, spec.num_classes)
+        output = model(torch.randn(2, *SHAPE))
+    assert output.shape == (2, NUM_CLASSES)
     assert torch.isfinite(output).all()
 
 
-def test_num_classes_is_honoured():
-    model = get_model(architecture="simple_cnn", num_classes=4)
+def test_number_of_classes_can_be_changed():
+    model = get_model("simple_cnn", num_classes=4, in_channels=IN_CHANNELS)
     with torch.no_grad():
-        assert model(torch.randn(1, 3, 32, 32)).shape == (1, 4)
+        assert model(torch.randn(1, *SHAPE)).shape == (1, 4)
 
 
-def test_grayscale_model_rejects_rgb_input():
-    """A 1-channel model must fail loudly on 3-channel input, not silently."""
-    model = get_model("simple_cnn", num_classes=10, in_channels=1)
+def test_model_rejects_the_wrong_number_of_channels():
+    """A grey model given a colour image should fail clearly, not carry on."""
+    model = get_model("simple_cnn", num_classes=NUM_CLASSES, in_channels=1)
     with pytest.raises(RuntimeError):
-        model(torch.randn(1, 3, 28, 28))
+        model(torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE))
 
 
 def test_unknown_architecture_raises():
@@ -67,40 +59,27 @@ def test_unknown_architecture_raises():
         get_model(architecture="not-a-real-model")
 
 
-def test_unknown_dataset_raises():
-    with pytest.raises(ValueError, match="Unsupported dataset"):
-        get_spec("imagenet")
-
-
-def test_dataset_name_lookup_is_forgiving():
-    assert get_spec("Fashion-MNIST").name == "fashionmnist"
-    assert get_spec("fashion_mnist").name == "fashionmnist"
-
-
-def test_model_is_trainable():
-    """One backward pass must produce gradients on the trainable parameters."""
-    model = SimpleCNN(num_classes=10)
+def test_model_can_learn():
+    """After one backward pass the weights should have gradients."""
+    model = SimpleCNN(num_classes=NUM_CLASSES, in_channels=IN_CHANNELS)
     loss = torch.nn.functional.cross_entropy(
-        model(torch.randn(2, 3, 32, 32)), torch.tensor([1, 7])
+        model(torch.randn(2, *SHAPE)), torch.tensor([1, 7])
     )
     loss.backward()
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
 
 
-@pytest.mark.parametrize("dataset", list(DATASET_SPECS))
-def test_checkpoint_roundtrip(tmp_path, dataset):
-    """A checkpoint must carry enough metadata for serve.py to rebuild the model."""
-    spec = get_spec(dataset)
-    model = get_model("simple_cnn", spec.num_classes, in_channels=spec.in_channels)
+def test_saved_model_loads_back_the_same(tmp_path):
+    """A saved file must hold enough detail for the API to rebuild the model."""
+    model = get_model("simple_cnn", NUM_CLASSES, in_channels=IN_CHANNELS)
     checkpoint_path = tmp_path / "classifier_v1.pt"
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "architecture": "simple_cnn",
-            "dataset": spec.name,
-            "num_classes": spec.num_classes,
-            "in_channels": spec.in_channels,
-            "classes": list(spec.classes),
+            "num_classes": NUM_CLASSES,
+            "in_channels": IN_CHANNELS,
+            "classes": list(CLASSES),
         },
         checkpoint_path,
     )
@@ -115,58 +94,54 @@ def test_checkpoint_roundtrip(tmp_path, dataset):
     restored.eval()
     model.eval()
 
-    sample = torch.randn(1, spec.in_channels, spec.image_size, spec.image_size)
+    sample = torch.randn(1, *SHAPE)
     with torch.no_grad():
         assert torch.allclose(model(sample), restored(sample), atol=1e-6)
 
 
 # --------------------------------------------------------------------------
-# Transforms
+# Image preparation
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("dataset", list(DATASET_SPECS))
-def test_training_transforms_yield_the_datasets_native_shape(dataset):
-    spec = get_spec(dataset)
-    expected = (spec.in_channels, spec.image_size, spec.image_size)
-    assert get_transforms(dataset, train=True)(blank(spec)).shape == expected
-    assert get_transforms(dataset, train=False)(blank(spec)).shape == expected
+def test_training_steps_give_the_expected_shape():
+    image = Image.new(IMAGE_MODE, (IMAGE_SIZE, IMAGE_SIZE))
+    assert get_transforms(train=True)(image).shape == SHAPE
+    assert get_transforms(train=False)(image).shape == SHAPE
 
 
-UPLOAD_MODES = ["RGB", "L", "RGBA", "P"]
+@pytest.mark.parametrize("mode", ["RGB", "L", "RGBA", "P"])
+@pytest.mark.parametrize("size", [(200, 130), (17, 400), (IMAGE_SIZE, IMAGE_SIZE)])
+def test_uploaded_images_are_always_converted_correctly(mode, size):
+    """An upload can be any size or colour mode and must still work."""
+    tensor = get_inference_transform()(Image.new(mode, size))
+    assert tensor.shape == SHAPE
+    assert torch.isfinite(tensor).all()
 
 
-@pytest.mark.parametrize("dataset", list(DATASET_SPECS))
-@pytest.mark.parametrize("mode", UPLOAD_MODES)
-def test_inference_transform_normalises_any_upload(dataset, mode):
-    """Uploads arrive at any size and colour mode; serving must cope with all of them.
-
-    Regression test: a grayscale upload used to reach a 3-channel Normalize
-    and raise a broadcast error mid-request.
-    """
-    spec = get_spec(dataset)
-    transform = get_inference_transform(dataset)
-    expected = (spec.in_channels, spec.image_size, spec.image_size)
-    for size in [(200, 130), (17, 400), (spec.image_size, spec.image_size)]:
-        tensor = transform(Image.new(mode, size))
-        assert tensor.shape == expected
-        assert torch.isfinite(tensor).all()
-
-
-@pytest.mark.parametrize("dataset", list(DATASET_SPECS))
-def test_normalisation_stats_match_channel_count(dataset):
-    spec = get_spec(dataset)
-    assert len(spec.mean) == len(spec.std) == spec.in_channels
+def test_there_are_ten_class_names():
+    assert len(CLASSES) == NUM_CLASSES == 10
 
 
 # --------------------------------------------------------------------------
-# Configs
+# Settings file
 # --------------------------------------------------------------------------
 
 
-def test_env_overrides_change_the_config(monkeypatch):
-    """Env vars let a quick run reuse the same config file."""
-    config = yaml.safe_load((CONFIG_DIR / "training_config.yaml").read_text())
+def test_settings_file_is_valid():
+    config = yaml.safe_load(CONFIG_PATH.read_text())
+    assert config["model"]["architecture"] in SUPPORTED_ARCHITECTURES
+    assert config["model"]["num_classes"] == NUM_CLASSES
+    assert config["training"]["epochs"] > 0
+    assert config["training"]["batch_size"] > 0
+    assert config["training"]["learning_rate"] > 0
+    assert config["training"]["early_stopping_patience"] >= 1
+    assert 0 < config["data"]["subset_fraction"] <= 1.0
+    assert config["output"]["model_name"].endswith(".pt")
+
+
+def test_environment_variables_change_the_settings(monkeypatch):
+    config = yaml.safe_load(CONFIG_PATH.read_text())
     monkeypatch.setenv("EPOCHS", "2")
     monkeypatch.setenv("SUBSET_FRACTION", "0.15")
     monkeypatch.setenv("DATA_DIR", "/mounted/data")
@@ -181,27 +156,11 @@ def test_env_overrides_change_the_config(monkeypatch):
     assert set(applied) == {"EPOCHS", "SUBSET_FRACTION", "DATA_DIR", "CHECKPOINT_DIR"}
 
 
-def test_config_is_untouched_when_no_env_vars_are_set(monkeypatch):
+def test_settings_stay_the_same_when_no_variables_are_set(monkeypatch):
     for name in train.ENV_OVERRIDES:
         monkeypatch.delenv(name, raising=False)
-    original = yaml.safe_load((CONFIG_DIR / "training_config.yaml").read_text())
-    config = yaml.safe_load((CONFIG_DIR / "training_config.yaml").read_text())
+    original = yaml.safe_load(CONFIG_PATH.read_text())
+    config = yaml.safe_load(CONFIG_PATH.read_text())
 
     assert train.apply_env_overrides(config) == {}
     assert config == original
-
-
-@pytest.mark.parametrize("config_path", ALL_CONFIGS, ids=lambda p: p.name)
-def test_every_config_is_valid(config_path):
-    """Each shipped config must be internally consistent and runnable."""
-    config = yaml.safe_load(config_path.read_text())
-    spec = get_spec(config["data"]["dataset"])
-
-    assert config["model"]["architecture"] in SUPPORTED_ARCHITECTURES
-    assert config["model"]["num_classes"] == spec.num_classes
-    assert config["training"]["epochs"] > 0
-    assert config["training"]["batch_size"] > 0
-    assert config["training"]["learning_rate"] > 0
-    assert config["training"]["early_stopping_patience"] >= 1
-    assert 0 < config["data"].get("subset_fraction", 1.0) <= 1.0
-    assert config["output"]["model_name"].endswith(".pt")

@@ -1,15 +1,7 @@
-"""Training entry point for the CIFAR-10 classifier.
+"""Trains the classifier and saves the best model.
 
-Design notes
-------------
-* All hyper-parameters come from ``configs/training_config.yaml``. The path is
-  resolved from ``$CONFIG_PATH`` -> ``/app/configs/training_config.yaml`` ->
-  ``configs/training_config.yaml``, so the same image works when the config is
-  mounted from a Kubernetes ConfigMap and when it is run locally.
-* Every metric is emitted as one JSON object per line (JSON Lines) on stdout,
-  which is what ``kubectl logs`` collects and what a log shipper can parse.
-* The best checkpoint (lowest validation loss) is written to a configurable
-  output directory, backed by a PersistentVolumeClaim in the cluster.
+Settings are read from configs/training_config.yaml. Progress is printed as
+one JSON object per line.
 """
 
 from __future__ import annotations
@@ -27,7 +19,13 @@ import yaml
 # Support both `python src/train.py` and `python -m src.train`.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dataset import get_dataloaders, get_spec  # noqa: E402
+from dataset import (  # noqa: E402
+    CLASSES,
+    DATASET_NAME,
+    IN_CHANNELS,
+    NUM_CLASSES,
+    get_dataloaders,
+)
 from model import get_model  # noqa: E402
 
 CONFIG_SEARCH_PATHS = (
@@ -143,12 +141,11 @@ def main() -> None:
     seed = int(train_cfg.get("seed", 42))
     set_seed(seed)
 
-    spec = get_spec(data_cfg.get("dataset", "cifar10"))
-    num_classes = int(model_cfg.get("num_classes", spec.num_classes))
-    if num_classes != spec.num_classes:
+    num_classes = int(model_cfg.get("num_classes", NUM_CLASSES))
+    if num_classes != NUM_CLASSES:
         raise ValueError(
-            f"config sets num_classes={num_classes} but {spec.name} has "
-            f"{spec.num_classes} classes"
+            f"the settings file says num_classes={num_classes}, but the dataset "
+            f"has {NUM_CLASSES} classes"
         )
     subset_fraction = float(data_cfg.get("subset_fraction", 1.0))
 
@@ -161,7 +158,7 @@ def main() -> None:
         config_path=str(config_path),
         device=str(device),
         threads=torch.get_num_threads(),
-        dataset=spec.name,
+        dataset=DATASET_NAME,
         architecture=model_cfg["architecture"],
         epochs=train_cfg["epochs"],
         batch_size=train_cfg["batch_size"],
@@ -174,12 +171,11 @@ def main() -> None:
         architecture=model_cfg["architecture"],
         num_classes=num_classes,
         pretrained=bool(model_cfg.get("pretrained", False)),
-        in_channels=spec.in_channels,
+        in_channels=IN_CHANNELS,
     ).to(device)
 
     train_loader, val_loader = get_dataloaders(
         data_dir=data_cfg["data_dir"],
-        dataset=spec.name,
         batch_size=int(train_cfg["batch_size"]),
         num_workers=data_cfg.get("num_workers"),
         download=bool(data_cfg.get("download", True)),
@@ -188,7 +184,7 @@ def main() -> None:
     )
     log(
         event="data_ready",
-        dataset=spec.name,
+        dataset=DATASET_NAME,
         train_batches=len(train_loader),
         val_batches=len(val_loader),
     )
@@ -236,9 +232,9 @@ def main() -> None:
                     # Everything serve.py needs to rebuild the model:
                     "architecture": model_cfg["architecture"],
                     "num_classes": num_classes,
-                    "in_channels": spec.in_channels,
-                    "dataset": spec.name,
-                    "classes": list(spec.classes),
+                    "in_channels": IN_CHANNELS,
+                    "dataset": DATASET_NAME,
+                    "classes": list(CLASSES),
                 },
                 save_path,
             )

@@ -1,19 +1,13 @@
-# Hyperparameters for the classifier. This is the only config file.
+# Settings for training the classifier.
 #
-# The paths below are relative, and the Docker image uses /app as its working
-# directory, so "./data" means ./data locally and /app/data inside a container.
-# One file works in both places.
+# The paths are relative. Docker uses /app as its working directory, so ./data
+# becomes /app/data inside a container.
 #
-# Any of these four can be overridden with an environment variable, which is
-# handy for a quick test run without editing the file:
-#
-#   DATA_DIR  CHECKPOINT_DIR  EPOCHS  SUBSET_FRACTION
-#
-# Quick 2-epoch run on 15% of the data:
-#   $env:EPOCHS="2"; $env:SUBSET_FRACTION="0.15"; python src\train.py
+# Four values can also be set through environment variables when a temporary
+# change is needed: EPOCHS, SUBSET_FRACTION, DATA_DIR and CHECKPOINT_DIR.
 
 model:
-  architecture: simple_cnn    # simple_cnn | resnet18
+  architecture: simple_cnn    # simple_cnn or resnet18
   num_classes: 10
   pretrained: false
 
@@ -26,11 +20,10 @@ training:
   seed: 42
 
 data:
-  dataset: fashionmnist       # fashionmnist | cifar10
   data_dir: ./data
   num_workers: 2
   download: true
-  subset_fraction: 1.0        # less than 1.0 trains on a random sample
+  subset_fraction: 1.0        # 1.0 uses all the images
 
 output:
   checkpoint_dir: ./checkpoints

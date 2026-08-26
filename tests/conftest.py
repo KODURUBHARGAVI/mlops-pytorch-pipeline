@@ -1,4 +1,4 @@
-"""Make the `src/` package importable from the tests without installing it."""
+"""Lets the tests import the code in src."""
 
 import sys
 from pathlib import Path

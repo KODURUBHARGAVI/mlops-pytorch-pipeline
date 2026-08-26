@@ -1,8 +1,7 @@
-"""Model definitions for the CIFAR-10 image classifier.
+"""The model designs used in this project.
 
-Two architectures
-simple_cnn- a small from-scratch CNN, useful for fast CPU smoke tests.
-resnet18- torchvision ResNet-18 adapted for 32x32 CIFAR images.
+simple_cnn is a small CNN written from scratch. resnet18 is the torchvision
+model, adjusted to work with small images.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ SUPPORTED_ARCHITECTURES = ("simple_cnn", "resnet18")
 
 
 class SimpleCNN(nn.Module):
-    """A compact 3-block CNN. Global pooling makes it input-size agnostic."""
+    """A small CNN with 3 blocks. Pooling at the end makes the image size flexible."""
 
     def __init__(self, num_classes: int = 10, in_channels: int = 3) -> None:
         super().__init__()
@@ -52,11 +51,11 @@ class SimpleCNN(nn.Module):
 def _build_resnet18(
     num_classes: int, pretrained: bool = False, in_channels: int = 3
 ) -> nn.Module:
-    """ResNet-18 re-wired for small CIFAR-sized inputs.
+    """ResNet-18 adjusted for small images.
 
-    The stock torchvision stem (7x7 stride-2 conv + maxpool) throws away far
-    too much spatial information on a 32x32 image, so it is replaced with a
-    3x3 stride-1 conv and the maxpool is removed.
+    The first layer in torchvision uses a large filter and a pooling step made
+    for big photographs, which removes too much detail from a 28 by 28 image.
+    Both are replaced here.
     """
     weights = models.ResNet18_Weights.DEFAULT if pretrained else None
     model = models.resnet18(weights=weights)
@@ -74,17 +73,10 @@ def get_model(
     pretrained: bool = False,
     in_channels: int = 3,
 ) -> nn.Module:
-    """Return an un-trained model for ``architecture``.
+    """Returns an untrained model.
 
-    Args:
-        architecture: ``simple_cnn`` or ``resnet18``.
-        num_classes: Width of the classification head.
-        pretrained: Load ImageNet weights (resnet18 only). Needs network access
-            at build time, so it stays off by default.
-        in_channels: 3 for RGB (CIFAR-10), 1 for grayscale (Fashion-MNIST).
-
-    Raises:
-        ValueError: if the architecture name is not supported.
+    architecture is simple_cnn or resnet18, and in_channels is 1 for grey
+    images or 3 for colour ones. An unknown architecture raises ValueError.
     """
     name = architecture.lower().strip()
     if name == "simple_cnn":

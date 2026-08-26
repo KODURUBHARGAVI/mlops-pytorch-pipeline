@@ -5,9 +5,9 @@ web API. An image can be sent to the API, and it returns the predicted class.
 
 The project runs on a normal laptop CPU. A GPU is not required.
 
-The dataset used is Fashion-MNIST. It contains 70,000 small grey images of
-clothing items, divided into 10 classes such as T-shirt, Trouser, Sneaker and
-Bag.
+The dataset is Fashion-MNIST. It contains 70,000 grey images of clothing
+items, sized 28 by 28, divided into 10 classes such as T-shirt, Trouser,
+Sneaker and Bag.
 
 ---
 
@@ -171,13 +171,12 @@ If the API was started on a different port, pass it to the test script:
 ## Project files
 
     src/model.py      the two model designs: a small CNN and ResNet-18
-    src/dataset.py    loads the images and prepares them for the model
+    src/dataset.py    loads the Fashion-MNIST images and prepares them
     src/train.py      the training loop
     src/serve.py      the web API
 
-    configs/training_config.yaml   all settings are stored here
+    configs/training_config.yaml   the settings
 
-    scripts/fetch_data.py         downloads the dataset from a faster mirror
     scripts/make_test_image.py    creates a test image
     scripts/smoke_test.py         calls the API and prints the responses
 
@@ -189,8 +188,7 @@ If the API was started on a different port, pass it to the test script:
 ## Changing the settings
 
 All settings are in configs/training_config.yaml, including epochs,
-batch_size and learning_rate. There is only one settings file, so no values
-need to be kept in sync.
+batch_size and learning_rate.
 
 For a temporary change, an environment variable can be used instead of editing
 the file:
@@ -201,7 +199,7 @@ the file:
     CHECKPOINT_DIR      location where the trained model is saved
 
 The paths in the settings file are relative, such as ./data. Docker uses /app
-as its working directory, so ./data becomes /app/data inside a container. This
-is why the same settings file works both on a laptop and in Kubernetes.
+as its working directory, so ./data becomes /app/data inside a container. The
+same settings file therefore works both on a laptop and in Kubernetes.
 
 ---

@@ -1,15 +1,6 @@
-"""FastAPI inference service for the trained CIFAR-10 classifier.
+"""The web API that serves predictions from the trained model.
 
-Endpoints
----------
-GET  /health   -> 200 when the checkpoint is loaded, 503 otherwise.
-                  Used by the Kubernetes liveness and readiness probes.
-GET  /metadata -> architecture, class names and checkpoint metrics.
-POST /predict  -> multipart image upload, returns per-class probabilities.
-
-The checkpoint path is configurable through ``$MODEL_PATH`` (or the
-checkpoint dir/model name from the mounted training config), so the same
-image serves any model produced by ``train.py``.
+It has three endpoints: /health, /metadata and /predict.
 """
 
 from __future__ import annotations
@@ -32,7 +23,13 @@ from PIL import Image, UnidentifiedImageError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dataset import get_inference_transform, get_spec  # noqa: E402
+from dataset import (  # noqa: E402
+    CLASSES,
+    DATASET_NAME,
+    IMAGE_SIZE,
+    IN_CHANNELS,
+    get_inference_transform,
+)
 from model import get_model  # noqa: E402
 
 logging.basicConfig(
@@ -49,14 +46,11 @@ CONFIG_SEARCH_PATHS = (
 DEFAULT_CHECKPOINT = "/app/checkpoints/classifier_v1.pt"
 TOP_K = int(os.getenv("TOP_K", "5"))
 
-# Filled in by the lifespan handler at start-up. The pre-processing pipeline
-# is rebuilt from the checkpoint's own dataset name, so a CIFAR-10 model and a
-# Fashion-MNIST model are both served correctly by this one image.
-DEFAULT_DATASET = os.getenv("DATASET", "cifar10")
+# Filled in when the app starts up.
 STATE: dict = {
     "model": None,
-    "classes": list(get_spec(DEFAULT_DATASET).classes),
-    "transform": get_inference_transform(DEFAULT_DATASET),
+    "classes": list(CLASSES),
+    "transform": get_inference_transform(),
     "metadata": {},
 }
 
@@ -94,12 +88,10 @@ def load_model() -> None:
 
     try:
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        architecture = checkpoint.get("architecture", "resnet18")
-        dataset = checkpoint.get("dataset", DEFAULT_DATASET)
-        spec = get_spec(dataset)
-        classes = checkpoint.get("classes", list(spec.classes))
+        architecture = checkpoint.get("architecture", "simple_cnn")
+        classes = checkpoint.get("classes", list(CLASSES))
         num_classes = int(checkpoint.get("num_classes", len(classes)))
-        in_channels = int(checkpoint.get("in_channels", spec.in_channels))
+        in_channels = int(checkpoint.get("in_channels", IN_CHANNELS))
 
         model = get_model(
             architecture=architecture,
@@ -111,11 +103,11 @@ def load_model() -> None:
 
         STATE["model"] = model
         STATE["classes"] = classes
-        STATE["transform"] = get_inference_transform(spec.name)
+        STATE["transform"] = get_inference_transform()
         STATE["metadata"] = {
             "architecture": architecture,
-            "dataset": spec.name,
-            "input_size": f"{spec.image_size}x{spec.image_size}x{in_channels}",
+            "dataset": checkpoint.get("dataset", DATASET_NAME),
+            "input_size": f"{IMAGE_SIZE}x{IMAGE_SIZE}x{in_channels}",
             "num_classes": num_classes,
             "checkpoint": str(checkpoint_path),
             "trained_epochs": checkpoint.get("epoch"),

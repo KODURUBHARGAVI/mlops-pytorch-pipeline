@@ -1,6 +1,8 @@
-"""Exercise the running inference API: /health, /metadata and /predict.
+"""Calls the API endpoints and prints the responses.
+
     python scripts/smoke_test.py
-    python scripts/smoke_test.py --base-url http://localhost:8000   # if the port was changed
+
+This is used instead of curl because curl in PowerShell cannot upload files.
 """
 
 from __future__ import annotations
@@ -56,7 +58,7 @@ def post_image(url: str, image_path: Path) -> tuple[int, object]:
 
 def show(label: str, status: int, payload: object) -> None:
     print(f"\n=== {label}  [HTTP {status}] ===")
-    print(json.dumps(payload, indent=2) if isinstance(payload, (dict, list)) else payload)
+    print(json.dumps(payload, indent=2) if isinstance(payload, dict | list) else payload)
 
 
 def main() -> None:

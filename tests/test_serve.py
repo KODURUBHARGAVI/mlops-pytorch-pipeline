@@ -1,8 +1,4 @@
-"""API-level tests for the FastAPI inference service.
-
-These exercise the real app through a test client, including the checkpoint
-loading that the Kubernetes readiness probe depends on.
-"""
+"""Tests for the web API."""
 
 import io
 
@@ -15,23 +11,22 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from dataset import DATASET_SPECS, get_spec  # noqa: E402
+from dataset import CLASSES, IN_CHANNELS, NUM_CLASSES  # noqa: E402
 from model import get_model  # noqa: E402
 
 
-def write_checkpoint(tmp_path, dataset="fashionmnist"):
-    """A real, tiny checkpoint that serve.py can actually load."""
-    spec = get_spec(dataset)
-    model = get_model("simple_cnn", spec.num_classes, in_channels=spec.in_channels)
+@pytest.fixture()
+def checkpoint(tmp_path):
+    """A small but real saved model that the API can load."""
+    model = get_model("simple_cnn", NUM_CLASSES, in_channels=IN_CHANNELS)
     path = tmp_path / "classifier_v1.pt"
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "architecture": "simple_cnn",
-            "dataset": spec.name,
-            "num_classes": spec.num_classes,
-            "in_channels": spec.in_channels,
-            "classes": list(spec.classes),
+            "num_classes": NUM_CLASSES,
+            "in_channels": IN_CHANNELS,
+            "classes": list(CLASSES),
             "epoch": 1,
             "val_accuracy": 0.5,
             "val_loss": 1.2,
@@ -39,11 +34,6 @@ def write_checkpoint(tmp_path, dataset="fashionmnist"):
         path,
     )
     return path
-
-
-@pytest.fixture()
-def checkpoint(tmp_path):
-    return write_checkpoint(tmp_path)
 
 
 def build_client(monkeypatch, model_path):
@@ -56,41 +46,44 @@ def build_client(monkeypatch, model_path):
 
 def png_bytes(size=(64, 64), mode="RGB") -> bytes:
     buffer = io.BytesIO()
-    Image.new(mode, size, color=(10, 200, 90) if mode == "RGB" else 128).save(
-        buffer, format="PNG"
-    )
+    colour = (10, 200, 90) if mode == "RGB" else 128
+    Image.new(mode, size, color=colour).save(buffer, format="PNG")
     return buffer.getvalue()
 
 
-def test_health_is_503_without_a_checkpoint(monkeypatch, tmp_path):
+def test_health_returns_503_when_there_is_no_model(monkeypatch, tmp_path):
     with build_client(monkeypatch, tmp_path / "missing.pt") as client:
         assert client.get("/health").status_code == 503
 
 
-def test_health_is_200_when_model_loaded(monkeypatch, checkpoint):
+def test_health_returns_200_once_the_model_is_loaded(monkeypatch, checkpoint):
     with build_client(monkeypatch, checkpoint) as client:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["model_loaded"] is True
 
 
-@pytest.mark.parametrize("dataset", list(DATASET_SPECS))
-def test_predict_works_for_every_dataset(monkeypatch, tmp_path, dataset):
-    """The image serves whichever dataset the checkpoint was trained on."""
-    path = write_checkpoint(tmp_path, dataset)
-    with build_client(monkeypatch, path) as client:
+def test_metadata_describes_the_loaded_model(monkeypatch, checkpoint):
+    with build_client(monkeypatch, checkpoint) as client:
+        body = client.get("/metadata").json()
+        assert body["architecture"] == "simple_cnn"
+        assert body["classes"] == list(CLASSES)
+        assert body["val_accuracy"] == 0.5
+
+
+def test_predict_returns_a_score_for_every_class(monkeypatch, checkpoint):
+    with build_client(monkeypatch, checkpoint) as client:
         response = client.post(
             "/predict", files={"image": ("test_image.png", png_bytes(), "image/png")}
         )
         assert response.status_code == 200
         body = response.json()
         assert body["predicted_class"] in body["probabilities"]
-        assert len(body["probabilities"]) == 10
+        assert len(body["probabilities"]) == NUM_CLASSES
         assert pytest.approx(sum(body["probabilities"].values()), abs=0.01) == 1.0
-        assert client.get("/metadata").json()["dataset"] == get_spec(dataset).name
 
 
-def test_predict_accepts_odd_sizes_and_grayscale_uploads(monkeypatch, checkpoint):
+def test_predict_accepts_odd_sizes_and_grey_images(monkeypatch, checkpoint):
     with build_client(monkeypatch, checkpoint) as client:
         for size, mode in [((17, 400), "RGB"), ((300, 220), "L")]:
             response = client.post(
@@ -100,7 +93,7 @@ def test_predict_accepts_odd_sizes_and_grayscale_uploads(monkeypatch, checkpoint
             assert response.status_code == 200
 
 
-def test_predict_rejects_a_non_image(monkeypatch, checkpoint):
+def test_predict_rejects_a_file_that_is_not_an_image(monkeypatch, checkpoint):
     with build_client(monkeypatch, checkpoint) as client:
         response = client.post(
             "/predict", files={"image": ("notes.txt", b"not an image", "text/plain")}
