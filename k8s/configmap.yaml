@@ -1,3 +1,4 @@
+# Part D
 # The settings file, held in the cluster instead of inside the image.
 # It is mounted into the training pod at /app/configs, so a value can be
 # changed without rebuilding the image.

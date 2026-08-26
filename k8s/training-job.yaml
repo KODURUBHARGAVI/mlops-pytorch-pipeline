@@ -1,3 +1,4 @@
+# Part D
 # Runs the training script once, as a batch job.
 # Apply namespace.yaml, configmap.yaml and storage.yaml before this file.
 apiVersion: batch/v1

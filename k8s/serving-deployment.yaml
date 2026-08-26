@@ -1,3 +1,4 @@
+# Part E
 # Runs the API. Two copies, both reading the model the training job wrote.
 apiVersion: apps/v1
 kind: Deployment
